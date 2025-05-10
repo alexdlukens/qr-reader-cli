@@ -159,23 +159,7 @@ pluggy = ">=1.5,<2"
 [package.extras]
 dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
 
-[[package]]
-name = "pyzbar"
-version = "0.1.9"
-description = "Read one-dimensional barcodes and QR codes from Python 2 and 3."
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "pyzbar-0.1.9-py2.py3-none-any.whl", hash = "sha256:4559628b8192feb25766d954b36a3753baaf5c97c03135aec7e4a026036b475d"},
-    {file = "pyzbar-0.1.9-py2.py3-none-win32.whl", hash = "sha256:8f4c5264c9c7c6b9f20d01efc52a4eba1ded47d9ba857a94130afe33703eb518"},
-    {file = "pyzbar-0.1.9-py2.py3-none-win_amd64.whl", hash = "sha256:13e3ee5a2f3a545204a285f41814d5c0db571967e8d4af8699a03afc55182a9c"},
-]
-
-[package.extras]
-scripts = ["Pillow (>=3.2.0)"]
-
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "ce93bfa7a2ef893f825db5b976579989899d42f686bc9528c46fe80169528886"
+content-hash = "adb603d15e604d321bc8151c2a30188ea406176b19bf6fe7f025b61899d10aea"
