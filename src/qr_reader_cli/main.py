@@ -33,7 +33,7 @@ def read_image_from_url(url: str) -> np.ndarray | None:
         logger.exception("Error reading image from URL: %s", e)
         return None
 
-def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Path):
+def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Path) -> list[str]:
     logger.debug("Reading QR code from: %s", image_path)
     if isinstance(image_path, ParseResult):
         image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
@@ -48,14 +48,14 @@ def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Pat
 
     if img is None:
         logger.error("Failed to read image from path: %s", image_path)
-        return
+        return []
     retval, decoded_info, points, straight_qrcode = qcd.detectAndDecodeMulti(img)
     if not retval:
         logger.warning("No QR code found in the image.")
-        return
+        return []
     if not many_ok and len(decoded_info) > 1:
         logger.error("Multiple QR codes found in the image, but --many-ok not specified.")
-        return
+        return []
     
     if decoded_info:
         logger.debug("Decoded QR code data: %s", decoded_info)
@@ -64,8 +64,11 @@ def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Pat
                 json.dump(decoded_info, f)
             logger.debug("QR code data saved to %s", output_path)
         else:
+            logger.debug("No output path specified, printing decoded QR code data.")
             for result in decoded_info:
                 print(result)
+                
+    return decoded_info
 
 
 def handle_image_path_parse(image_path: str) -> ParseResult | Path:
