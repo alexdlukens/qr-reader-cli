@@ -7,19 +7,33 @@ description: |
 
 grade: devel # must be 'stable' to release into candidate/stable channels
 confinement: devmode # use 'strict' once you have the right plugs and slots
-
+lint:
+  ignore:
+    - library
 parts:
   qr-cli:
     # See 'snapcraft plugins'
-    plugin: poetry
+    plugin: python
     source: .
     override-build: |
       craftctl default
       # copy main.py to bin/qr-cli
       mkdir -p $CRAFT_PART_INSTALL/bin
-      cp $CRAFT_PART_SRC/qr_reader_cli/main.py $CRAFT_PART_INSTALL/bin/qr-cli
+      cp $CRAFT_PART_SRC/src/qr_reader_cli/main.py $CRAFT_PART_INSTALL/bin/qr-cli
+      python3 -m compileall -b $SNAPCRAFT_PART_INSTALL/bin/qr-cli
       # make it executable
       chmod +x $CRAFT_PART_INSTALL/bin/qr-cli
+
+    stage-packages:
+      - python3-opencv
+      - python3-numpy
+      - python3
+
+    override-stage: |
+      craftctl default
+
+      # copy python to prime location
+
 
 apps:
   qr-cli:

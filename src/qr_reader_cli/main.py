@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import json
 import logging
@@ -49,7 +50,7 @@ def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Pat
     if img is None:
         logger.error("Failed to read image from path: %s", image_path)
         return []
-    retval, decoded_info, points, straight_qrcode = qcd.detectAndDecodeMulti(img)
+    retval, decoded_info, _, _ = qcd.detectAndDecodeMulti(img)
     if not retval:
         logger.warning("No QR code found in the image.")
         return []
@@ -91,8 +92,3 @@ if __name__ == "__main__":
         
     image_path = handle_image_path_parse(args.image_path)
     read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
-    if args.output:
-        with open(args.output, 'w') as f:
-            f.write("QR Code data saved.")
-        if args.verbose:
-            print(f"QR code data saved to {args.output}")
