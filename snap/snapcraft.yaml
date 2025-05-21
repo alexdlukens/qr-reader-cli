@@ -3,10 +3,28 @@ base: core24
 version: '0.1'
 summary: A simple QR code reader and generator
 description: |
-  A simple QR code reader and generator
+  A simple QR code reader. Uses OpenCV-Python to load an image file and detect, decode QR codes
 
-grade: devel # must be 'stable' to release into candidate/stable channels
-confinement: devmode # use 'strict' once you have the right plugs and slots
+  ```bash
+  usage: qr-cli [-h] [-v] [-o OUTPUT] [--many-ok] image_path
+
+  Read QR codes from an image file.
+
+  positional arguments:
+    image_path            Path to the image file containing the QR code.
+
+  options:
+    -h, --help            show this help message and exit
+    -v, --verbose         Enable verbose output.
+    -o OUTPUT, --output OUTPUT
+                          Path to save the decoded QR code output.
+    --many-ok             Allow multiple QR codes in the image.
+  ```
+
+license: MIT
+grade: stable
+confinement: strict
+
 lint:
   ignore:
     - library
@@ -20,19 +38,16 @@ parts:
       # copy main.py to bin/qr-cli
       mkdir -p $CRAFT_PART_INSTALL/bin
       cp $CRAFT_PART_SRC/src/qr_reader_cli/main.py $CRAFT_PART_INSTALL/bin/qr-cli
-      python3 -m compileall -b $SNAPCRAFT_PART_INSTALL/bin/qr-cli
       # make it executable
       chmod +x $CRAFT_PART_INSTALL/bin/qr-cli
 
+    build-packages:
+      - build-essential
     stage-packages:
-      - python3-opencv
-      - python3-numpy
-      - python3
+      - libgl1
+    python-packages:
+      - opencv-python-headless
 
-    override-stage: |
-      craftctl default
-
-      # copy python to prime location
 
 
 apps:
