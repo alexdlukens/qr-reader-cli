@@ -5,21 +5,14 @@ summary: A simple QR code reader and generator
 description: |
   A simple QR code reader. Uses OpenCV-Python to load an image file and detect, decode QR codes
 
-  ```bash
-  usage: qr-cli [-h] [-v] [-o OUTPUT] [--many-ok] image_path
+  Image with single QR code
+  `qr-cli ./path/to/file.jpg`
 
-  Read QR codes from an image file.
+  Image with multiple QR codes
+  `qr-cli ./path/to/file.jpg --many-ok`
 
-  positional arguments:
-    image_path            Path to the image file containing the QR code.
-
-  options:
-    -h, --help            show this help message and exit
-    -v, --verbose         Enable verbose output.
-    -o OUTPUT, --output OUTPUT
-                          Path to save the decoded QR code output.
-    --many-ok             Allow multiple QR codes in the image.
-  ```
+  Output result to file
+  `qr-cli ./path/to/file.jpg -o result.json`
 
 license: MIT
 grade: stable
