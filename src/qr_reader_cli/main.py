@@ -96,7 +96,6 @@ def get_image_from_webcam():
                 break
     finally:
         cap.release()
-        cv2.destroyAllWindows()
     
     # store frame in temporary file with path
     with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmpfile:

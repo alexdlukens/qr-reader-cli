@@ -8,8 +8,9 @@ authors = ["Alex Lukens <alexdlukens@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-opencv-python = ">=4.11.0.86,<5.0.0.0"
+opencv-python-headless = ">=4.11.0.86,<5.0.0.0"
 python = ">=3.12"
+rich = "^14.0.0"
 
 
 [build-system]
