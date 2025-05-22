@@ -11,12 +11,14 @@ import numpy as np
 # set log level for OpenCV to ERROR before importing cv2
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 import cv2
+import tempfile
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 parser = argparse.ArgumentParser(description="Read QR codes from an image file.")
-parser.add_argument("image_path", type=str, help="Path to the image file containing the QR code.")
+parser.add_argument("-i", "--image-path", type=str, help="Path to the image file containing the QR code.")
 parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
 parser.add_argument("-o", "--output", type=Path, help="Path to save the decoded QR code output.")
 parser.add_argument("--many-ok", action="store_true", help="Allow multiple QR codes in the image.")
@@ -71,6 +73,42 @@ def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Pat
                 
     return decoded_info
 
+@contextmanager
+def get_image_from_webcam():
+    # open webcam using OpenCV
+    logger.debug("Opening webcam...")
+    frame = None
+    try:
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            logger.error("Could not open webcam.")
+            return None
+        logger.debug("Webcam opened successfully.")
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                logger.error("Failed to capture image from webcam.")
+                break
+            exists, _ = qcd.detectMulti(frame, None)
+            if exists:
+                logger.debug("QR code detected in webcam image.")
+                break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+    
+    # store frame in temporary file with path
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmpfile:
+        if frame is None:
+            logger.error("No frame captured from webcam.")
+            yield None
+        else:
+            cv2.imwrite(tmpfile.name, frame)
+            temp_path = Path(tmpfile.name)
+
+            yield temp_path
+    
 
 def handle_image_path_parse(image_path: str) -> ParseResult | Path:
     parsed_path = urlparse(image_path)
@@ -89,6 +127,14 @@ if __name__ == "__main__":
     if args.verbose:
         logger.setLevel(logging.DEBUG)
         logger.debug("Arguments: %s", args)
-        
-    image_path = handle_image_path_parse(args.image_path)
-    read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
+    if args.image_path:
+        image_path = handle_image_path_parse(args.image_path)
+        read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
+    else:
+        # open webcam
+        with get_image_from_webcam() as webcam_image:
+            if webcam_image is None:
+                logger.error("No image captured from webcam.")
+                exit(1)
+            image_path = webcam_image
+            read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
