@@ -2,28 +2,49 @@
 import argparse
 import json
 import logging
+import os
+import tempfile
 import urllib
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
-import os
+
+import ascii_magic
 import numpy as np
+from PIL import Image
+from rich.console import Console
+from rich.live import Live
+from rich_pixels import Pixels
 
 # set log level for OpenCV to ERROR before importing cv2
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
+
 import cv2
-import tempfile
-from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 parser = argparse.ArgumentParser(description="Read QR codes from an image file.")
-parser.add_argument("-i", "--image-path", type=str, help="Path to the image file containing the QR code.")
-parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
-parser.add_argument("-o", "--output", type=Path, help="Path to save the decoded QR code output.")
-parser.add_argument("--many-ok", action="store_true", help="Allow multiple QR codes in the image.")
+parser.add_argument(
+    "-i",
+    "--image-path",
+    type=str,
+    help="Path to the image file containing the QR code.",
+)
+parser.add_argument(
+    "-v", "--verbose", action="store_true", help="Enable verbose output."
+)
+parser.add_argument(
+    "-o", "--output", type=Path, help="Path to save the decoded QR code output."
+)
+parser.add_argument(
+    "--many-ok", action="store_true", help="Allow multiple QR codes in the image."
+)
 
 qcd = cv2.QRCodeDetector()
+
 
 def read_image_from_url(url: str) -> np.ndarray | None:
     logger.debug("Reading image from URL: %s", url)
@@ -36,7 +57,10 @@ def read_image_from_url(url: str) -> np.ndarray | None:
         logger.exception("Error reading image from URL: %s", e)
         return None
 
-def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Path) -> list[str]:
+
+def read_qr_code(
+    image_path: ParseResult | Path, many_ok: bool, output_path: Path
+) -> list[str]:
     logger.debug("Reading QR code from: %s", image_path)
     if isinstance(image_path, ParseResult):
         image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
@@ -57,21 +81,50 @@ def read_qr_code(image_path: ParseResult | Path, many_ok: bool, output_path: Pat
         logger.warning("No QR code found in the image.")
         return []
     if not many_ok and len(decoded_info) > 1:
-        logger.error("Multiple QR codes found in the image, but --many-ok not specified.")
+        logger.error(
+            "Multiple QR codes found in the image, but --many-ok not specified."
+        )
         return []
-    
+
     if decoded_info:
         logger.debug("Decoded QR code data: %s", decoded_info)
         if output_path:
-            with open(output_path, 'w') as f:
+            with open(output_path, "w") as f:
                 json.dump(decoded_info, f)
             logger.debug("QR code data saved to %s", output_path)
         else:
             logger.debug("No output path specified, printing decoded QR code data.")
             for result in decoded_info:
                 print(result)
-                
+
     return decoded_info
+
+
+def display_image_on_console(live: Live, image: np.ndarray):
+    # get size of console
+    console_size = live.console.size
+
+    # get size of image
+
+    # image_height, image_width, _ = image.shape
+
+    # convert image to proper size for display in console
+    # if image_width > console_size.width or image_height > console_size.height:
+    #     scale = min(console_size.width / image_width, console_size.height / image_height)
+    #     new_size = (int(image_width * scale), int(image_height * scale))
+    #     image = cv2.resize(image, new_size)
+
+    # Convert OpenCV image (BGR) to PIL Image (RGB)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    pil_image = Image.fromarray(image_rgb)
+
+    live.update(
+        Pixels.from_image(
+            pil_image, resize=(console_size.width, console_size.height * 2)
+        )
+    )
+    live.refresh()
+
 
 @contextmanager
 def get_image_from_webcam():
@@ -84,19 +137,21 @@ def get_image_from_webcam():
             logger.error("Could not open webcam.")
             return None
         logger.debug("Webcam opened successfully.")
-        
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                logger.error("Failed to capture image from webcam.")
-                break
-            exists, _ = qcd.detectMulti(frame, None)
-            if exists:
-                logger.debug("QR code detected in webcam image.")
-                break
+
+        with Live(refresh_per_second=10, screen=True) as live:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    logger.error("Failed to capture image from webcam.")
+                    break
+                display_image_on_console(live=live, image=frame)
+                exists, _ = qcd.detectMulti(frame, None)
+                if exists:
+                    logger.debug("QR code detected in webcam image.")
+                    break
     finally:
         cap.release()
-    
+
     # store frame in temporary file with path
     with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmpfile:
         if frame is None:
@@ -107,7 +162,7 @@ def get_image_from_webcam():
             temp_path = Path(tmpfile.name)
 
             yield temp_path
-    
+
 
 def handle_image_path_parse(image_path: str) -> ParseResult | Path:
     parsed_path = urlparse(image_path)
@@ -121,6 +176,7 @@ def handle_image_path_parse(image_path: str) -> ParseResult | Path:
             raise FileNotFoundError(f"File does not exist: {image_path}")
         return Path(image_path)
 
+
 if __name__ == "__main__":
     args = parser.parse_args()
     if args.verbose:
@@ -128,7 +184,9 @@ if __name__ == "__main__":
         logger.debug("Arguments: %s", args)
     if args.image_path:
         image_path = handle_image_path_parse(args.image_path)
-        read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
+        read_qr_code(
+            image_path=image_path, many_ok=args.many_ok, output_path=args.output
+        )
     else:
         # open webcam
         with get_image_from_webcam() as webcam_image:
@@ -136,4 +194,6 @@ if __name__ == "__main__":
                 logger.error("No image captured from webcam.")
                 exit(1)
             image_path = webcam_image
-            read_qr_code(image_path=image_path, many_ok=args.many_ok, output_path=args.output)
+            read_qr_code(
+                image_path=image_path, many_ok=args.many_ok, output_path=args.output
+            )
