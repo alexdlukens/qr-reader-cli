@@ -3,13 +3,14 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import tempfile
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Sequence
 from urllib.parse import ParseResult, urlparse
-import subprocess
+
 import numpy as np
 import questionary
 from PIL import Image
@@ -43,7 +44,7 @@ parser.add_argument(
     "--many-ok", action="store_true", help="Allow multiple QR codes in the image."
 )
 
-is_snap = os.environ.get('SNAP_NAME', '') == 'my snap name'
+is_snap = os.environ.get("SNAP_NAME", "") != ""
 qcd = cv2.QRCodeDetector()
 
 
@@ -177,6 +178,7 @@ def handle_image_path_parse(image_path: str) -> ParseResult | Path:
             raise FileNotFoundError(f"File does not exist: {image_path}")
         return Path(image_path)
 
+
 def get_webcam_name_from_sysfs(dev_path: str) -> str | None:
     try:
         base = os.path.realpath(f"/sys/class/video4linux/{os.path.basename(dev_path)}")
@@ -197,18 +199,28 @@ if __name__ == "__main__":
             image_path=image_path, many_ok=args.many_ok, output_path=args.output
         )
     else:
-        
         logger.info("No image path provided, using webcam to capture QR code.")
         if is_snap:
             # use snapctl to see if camera interface is connected
-            result = subprocess.run("snapctl is-connected camera", shell=True, check=True)
+            result = subprocess.run(
+                "snapctl is-connected camera",
+                shell=True,
+                check=False,
+                capture_output=True,
+            )
             if result.returncode != 0:
-                logger.error("Camera interface is not connected. Please connect it using 'snap connect <snap>:camera'")
+                logger.error(
+                    "Camera interface is not connected. Please connect it using 'snap connect <snap>:camera'"
+                )
                 exit(1)
-
+            logger.debug("Camera interface is connected.")
+        else:
+            logger.debug("Not running in a snap, assuming camera interface is available.")
         webcams = [str(path) for path in Path("/dev").glob("video*")]
         if not webcams:
-            logger.error("No webcams found. Please specify an image path or connect a webcam")
+            logger.error(
+                "No webcams found. Please specify an image path or connect a webcam"
+            )
             exit(1)
         # prompt user to select webcam if multiple are available
         selected_webcam = webcams[0]
@@ -218,17 +230,21 @@ if __name__ == "__main__":
             for i, webcam in enumerate(webcams):
                 webcam_name = get_webcam_name_from_sysfs(webcam)
                 webcam_choices.append(f"{i}: {webcam} ({webcam_name})")
+            
             selected = None
-            while not selected:
-                # use questionary to prompt user to select webcam
-                logger.debug("Prompting user to select webcam...")
-                selected = questionary.select(
-                    "Multiple webcams detected. Select one:",
-                    choices=webcam_choices
-                ).ask()
+            # use questionary to prompt user to select webcam
+            logger.debug("Prompting user to select webcam...")
+            selected = questionary.select(
+                "Multiple webcams detected. Select one:", choices=webcam_choices
+            ).ask()
+            
+            if selected is None:
+                logger.error("No webcam selected. Exiting.")
+                exit(1)
+            
             selected_index = webcam_choices.index(selected)
             selected_webcam = webcams[selected_index]
-        
+
         # open webcam
         with get_image_from_webcam(webcam_path=selected_webcam) as webcam_image:
             if webcam_image is None:
