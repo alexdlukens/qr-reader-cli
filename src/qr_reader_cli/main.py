@@ -4,22 +4,22 @@ import json
 import logging
 import os
 import tempfile
-import urllib
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Sequence
 from urllib.parse import ParseResult, urlparse
-
-import ascii_magic
+import subprocess
 import numpy as np
+import questionary
 from PIL import Image
-from rich.console import Console
 from rich.live import Live
 from rich_pixels import Pixels
 
 # set log level for OpenCV to ERROR before importing cv2
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 
-import cv2
+import cv2  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -43,6 +43,7 @@ parser.add_argument(
     "--many-ok", action="store_true", help="Allow multiple QR codes in the image."
 )
 
+is_snap = os.environ.get('SNAP_NAME', '') == 'my snap name'
 qcd = cv2.QRCodeDetector()
 
 
@@ -60,15 +61,15 @@ def read_image_from_url(url: str) -> np.ndarray | None:
 
 def read_qr_code(
     image_path: ParseResult | Path, many_ok: bool, output_path: Path
-) -> list[str]:
+) -> Sequence[str]:
     logger.debug("Reading QR code from: %s", image_path)
     if isinstance(image_path, ParseResult):
-        image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
+        web_image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
         # read image from URL
-        img = read_image_from_url(image_path)
+        img = read_image_from_url(web_image_path)
     else:
         try:
-            img = cv2.imread(image_path)
+            img = cv2.imread(str(image_path))
         except Exception as e:
             logger.exception("Error reading image from file: %s", e)
             img = None
@@ -127,12 +128,12 @@ def display_image_on_console(live: Live, image: np.ndarray):
 
 
 @contextmanager
-def get_image_from_webcam():
+def get_image_from_webcam(webcam_path: str):
     # open webcam using OpenCV
     logger.debug("Opening webcam...")
     frame = None
+    cap = cv2.VideoCapture(webcam_path)
     try:
-        cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             logger.error("Could not open webcam.")
             return None
@@ -176,6 +177,14 @@ def handle_image_path_parse(image_path: str) -> ParseResult | Path:
             raise FileNotFoundError(f"File does not exist: {image_path}")
         return Path(image_path)
 
+def get_webcam_name_from_sysfs(dev_path: str) -> str | None:
+    try:
+        base = os.path.realpath(f"/sys/class/video4linux/{os.path.basename(dev_path)}")
+        with open(os.path.join(base, "name"), "r") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -188,8 +197,40 @@ if __name__ == "__main__":
             image_path=image_path, many_ok=args.many_ok, output_path=args.output
         )
     else:
+        
+        logger.info("No image path provided, using webcam to capture QR code.")
+        if is_snap:
+            # use snapctl to see if camera interface is connected
+            result = subprocess.run("snapctl is-connected camera", shell=True, check=True)
+            if result.returncode != 0:
+                logger.error("Camera interface is not connected. Please connect it using 'snap connect <snap>:camera'")
+                exit(1)
+
+        webcams = [str(path) for path in Path("/dev").glob("video*")]
+        if not webcams:
+            logger.error("No webcams found. Please specify an image path or connect a webcam")
+            exit(1)
+        # prompt user to select webcam if multiple are available
+        selected_webcam = webcams[0]
+        if len(webcams) > 1:
+            logger.info("Multiple webcams found: %s", webcams)
+            webcam_choices = []
+            for i, webcam in enumerate(webcams):
+                webcam_name = get_webcam_name_from_sysfs(webcam)
+                webcam_choices.append(f"{i}: {webcam} ({webcam_name})")
+            selected = None
+            while not selected:
+                # use questionary to prompt user to select webcam
+                logger.debug("Prompting user to select webcam...")
+                selected = questionary.select(
+                    "Multiple webcams detected. Select one:",
+                    choices=webcam_choices
+                ).ask()
+            selected_index = webcam_choices.index(selected)
+            selected_webcam = webcams[selected_index]
+        
         # open webcam
-        with get_image_from_webcam() as webcam_image:
+        with get_image_from_webcam(webcam_path=selected_webcam) as webcam_image:
             if webcam_image is None:
                 logger.error("No image captured from webcam.")
                 exit(1)
