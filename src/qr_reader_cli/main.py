@@ -188,6 +188,39 @@ def get_webcam_name_from_sysfs(dev_path: str) -> str | None:
         return None
 
 
+def get_selected_webcam() -> str:
+    webcams = [str(path) for path in Path("/dev").glob("video*")]
+    if not webcams:
+        logger.error(
+            "No webcams found. Please specify an image path or connect a webcam"
+        )
+        exit(1)
+    # prompt user to select webcam if multiple are available
+    selected_webcam = webcams[0]
+    if len(webcams) > 1:
+        logger.info("Multiple webcams found: %s", webcams)
+        webcam_choices = []
+        for i, webcam in enumerate(webcams):
+            webcam_name = get_webcam_name_from_sysfs(webcam)
+            webcam_choices.append(f"{i}: {webcam} ({webcam_name})")
+
+        selected = None
+        # use questionary to prompt user to select webcam
+        logger.debug("Prompting user to select webcam...")
+        selected = questionary.select(
+            "Multiple webcams detected. Select one:", choices=webcam_choices
+        ).ask()
+
+        if selected is None:
+            logger.error("No webcam selected. Exiting.")
+            exit(1)
+
+        selected_index = webcam_choices.index(selected)
+        selected_webcam = webcams[selected_index]
+
+    return selected_webcam
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
     if args.verbose:
@@ -215,42 +248,21 @@ if __name__ == "__main__":
                 exit(1)
             logger.debug("Camera interface is connected.")
         else:
-            logger.debug("Not running in a snap, assuming camera interface is available.")
-        webcams = [str(path) for path in Path("/dev").glob("video*")]
-        if not webcams:
-            logger.error(
-                "No webcams found. Please specify an image path or connect a webcam"
+            logger.debug(
+                "Not running in a snap, assuming camera interface is available."
             )
-            exit(1)
-        # prompt user to select webcam if multiple are available
-        selected_webcam = webcams[0]
-        if len(webcams) > 1:
-            logger.info("Multiple webcams found: %s", webcams)
-            webcam_choices = []
-            for i, webcam in enumerate(webcams):
-                webcam_name = get_webcam_name_from_sysfs(webcam)
-                webcam_choices.append(f"{i}: {webcam} ({webcam_name})")
-            
-            selected = None
-            # use questionary to prompt user to select webcam
-            logger.debug("Prompting user to select webcam...")
-            selected = questionary.select(
-                "Multiple webcams detected. Select one:", choices=webcam_choices
-            ).ask()
-            
-            if selected is None:
-                logger.error("No webcam selected. Exiting.")
-                exit(1)
-            
-            selected_index = webcam_choices.index(selected)
-            selected_webcam = webcams[selected_index]
 
         # open webcam
-        with get_image_from_webcam(webcam_path=selected_webcam) as webcam_image:
-            if webcam_image is None:
-                logger.error("No image captured from webcam.")
-                exit(1)
-            image_path = webcam_image
-            read_qr_code(
-                image_path=image_path, many_ok=args.many_ok, output_path=args.output
-            )
+        selected_webcam = get_selected_webcam()
+        try:
+            with get_image_from_webcam(webcam_path=selected_webcam) as webcam_image:
+                if webcam_image is None:
+                    logger.error("No image captured from webcam.")
+                    exit(1)
+                image_path = webcam_image
+                read_qr_code(
+                    image_path=image_path, many_ok=args.many_ok, output_path=args.output
+                )
+        except KeyboardInterrupt:
+            logger.info("QR code reading interrupted by user.")
+            exit(0)
