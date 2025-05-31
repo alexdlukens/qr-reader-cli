@@ -43,9 +43,13 @@ parser.add_argument(
 parser.add_argument(
     "--many-ok", action="store_true", help="Allow multiple QR codes in the image."
 )
+parser.add_argument(
+    "--use-wechat", action="store_true", help="Use WeChat QR code detection."
+)
 
 is_snap = os.environ.get("SNAP_NAME", "") != ""
 qcd = cv2.QRCodeDetector()
+wechat_qcd = cv2.wechat_qrcode.WeChatQRCode()
 
 
 def read_image_from_url(url: str) -> np.ndarray | None:
@@ -61,7 +65,10 @@ def read_image_from_url(url: str) -> np.ndarray | None:
 
 
 def read_qr_code(
-    image_path: ParseResult | Path, many_ok: bool, output_path: Path
+    image_path: ParseResult | Path,
+    many_ok: bool,
+    output_path: Path,
+    use_wechat: bool = False,
 ) -> Sequence[str]:
     logger.debug("Reading QR code from: %s", image_path)
     if isinstance(image_path, ParseResult):
@@ -78,9 +85,8 @@ def read_qr_code(
     if img is None:
         logger.error("Failed to read image from path: %s", image_path)
         return []
-    retval, decoded_info, _, _ = qcd.detectAndDecodeMulti(img)
-    if not retval:
-        logger.warning("No QR code found in the image.")
+    decoded_info = handle_image(img, qcd if not use_wechat else wechat_qcd)
+    if decoded_info is None:
         return []
     if not many_ok and len(decoded_info) > 1:
         logger.error(
@@ -106,16 +112,6 @@ def display_image_on_console(live: Live, image: np.ndarray):
     # get size of console
     console_size = live.console.size
 
-    # get size of image
-
-    # image_height, image_width, _ = image.shape
-
-    # convert image to proper size for display in console
-    # if image_width > console_size.width or image_height > console_size.height:
-    #     scale = min(console_size.width / image_width, console_size.height / image_height)
-    #     new_size = (int(image_width * scale), int(image_height * scale))
-    #     image = cv2.resize(image, new_size)
-
     # Convert OpenCV image (BGR) to PIL Image (RGB)
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     pil_image = Image.fromarray(image_rgb)
@@ -128,12 +124,44 @@ def display_image_on_console(live: Live, image: np.ndarray):
     live.refresh()
 
 
+def set_capture_max_resolution(cap: cv2.VideoCapture):
+    # set maximum resolution for webcam capture
+    # it will automatically adjust to the maximum supported resolution
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+
+
+def handle_image(
+    frame, qcd: cv2.QRCodeDetector | cv2.wechat_qrcode.WeChatQRCode
+) -> Sequence[str] | None:
+    logger.debug("Handling image for QR code detection.")
+
+    def process_detection_result(
+        decoded_data: Sequence[str] | None, success: bool = True
+    ) -> Sequence[str] | None:
+        if success and decoded_data:
+            logger.debug("QR code detected in image.")
+            return decoded_data
+        else:
+            logger.debug("No QR code found in the image.")
+            return None
+
+    if isinstance(qcd, cv2.wechat_qrcode.WeChatQRCode):
+        decoded_data, _ = qcd.detectAndDecode(frame, None)
+        return process_detection_result(decoded_data)
+    else:
+        success, decoded_data, _, _ = qcd.detectAndDecodeMulti(frame)
+        return process_detection_result(decoded_data, success)
+
+
 @contextmanager
-def get_image_from_webcam(webcam_path: str):
+def get_image_from_webcam(webcam_path: str, use_wechat: bool = False):
     # open webcam using OpenCV
     logger.debug("Opening webcam...")
     frame = None
     cap = cv2.VideoCapture(webcam_path)
+    set_capture_max_resolution(cap)
+
     try:
         if not cap.isOpened():
             logger.error("Could not open webcam.")
@@ -146,9 +174,11 @@ def get_image_from_webcam(webcam_path: str):
                 if not ret:
                     logger.error("Failed to capture image from webcam.")
                     break
+                decoded_data = handle_image(
+                    frame, qcd=wechat_qcd if use_wechat else qcd
+                )
                 display_image_on_console(live=live, image=frame)
-                exists, _ = qcd.detectMulti(frame, None)
-                if exists:
+                if decoded_data:
                     logger.debug("QR code detected in webcam image.")
                     break
     finally:
@@ -229,7 +259,10 @@ if __name__ == "__main__":
     if args.image_path:
         image_path = handle_image_path_parse(args.image_path)
         read_qr_code(
-            image_path=image_path, many_ok=args.many_ok, output_path=args.output
+            image_path=image_path,
+            many_ok=args.many_ok,
+            output_path=args.output,
+            use_wechat=args.use_wechat,
         )
     else:
         logger.info("No image path provided, using webcam to capture QR code.")
@@ -255,14 +288,24 @@ if __name__ == "__main__":
         # open webcam
         selected_webcam = get_selected_webcam()
         try:
-            with get_image_from_webcam(webcam_path=selected_webcam) as webcam_image:
-                if webcam_image is None:
-                    logger.error("No image captured from webcam.")
-                    exit(1)
-                image_path = webcam_image
-                read_qr_code(
-                    image_path=image_path, many_ok=args.many_ok, output_path=args.output
-                )
+            while True:
+                with get_image_from_webcam(
+                    webcam_path=selected_webcam, use_wechat=args.use_wechat
+                ) as webcam_image:
+                    if webcam_image is None:
+                        logger.error("No image captured from webcam.")
+                        exit(1)
+                    image_path = webcam_image
+                    decoded_data = read_qr_code(
+                        image_path=image_path,
+                        many_ok=args.many_ok,
+                        output_path=args.output,
+                        use_wechat=args.use_wechat,
+                    )
+                    if all(not data for data in decoded_data):
+                        logger.error("No QR code data decoded from the image.")
+                        continue
+                    break
         except KeyboardInterrupt:
             logger.info("QR code reading interrupted by user.")
             exit(0)

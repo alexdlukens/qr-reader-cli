@@ -13,6 +13,7 @@ python = ">=3.12"
 rich = "^14.0.0"
 rich-pixels = "^3.0.1"
 questionary = "^2.1.0"
+opencv-contrib-python-headless = "^4.11.0.86"
 
 
 [build-system]
