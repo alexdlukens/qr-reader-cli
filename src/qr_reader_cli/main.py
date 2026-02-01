@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from contextlib import contextmanager
@@ -46,6 +47,10 @@ parser.add_argument(
 parser.add_argument(
     "--use-wechat", action="store_true", help="Use WeChat QR code detection."
 )
+parser.add_argument(
+    "--downscale-factor", type=float, default=1.0, help="Image downscale factor."
+)
+parser.add_argument("--skip-frames", type=int, default=5, help="Number of frames to skip.")
 
 is_snap = os.environ.get("SNAP_NAME", "") != ""
 qcd = cv2.QRCodeDetector()
@@ -61,11 +66,10 @@ def read_image_from_url(url: str) -> np.ndarray | None:
         return img
     except Exception as e:
         logger.exception("Error reading image from URL: %s", e)
-        return None
 
 
 def read_qr_code(
-    image_path: ParseResult | Path,
+    image_path: ParseResult | Path | str,
     many_ok: bool,
     output_path: Path,
     use_wechat: bool = False,
@@ -75,18 +79,18 @@ def read_qr_code(
         web_image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
         # read image from URL
         img = read_image_from_url(web_image_path)
+        if img is None:
+            return []
     else:
         try:
             img = cv2.imread(str(image_path))
         except Exception as e:
             logger.exception("Error reading image from file: %s", e)
-            img = None
+            return []
 
-    if img is None:
-        logger.error("Failed to read image from path: %s", image_path)
-        return []
     decoded_info = handle_image(img, qcd if not use_wechat else wechat_qcd)
-    if decoded_info is None:
+    if not decoded_info:
+        logger.debug("No QR code data decoded.")
         return []
     if not many_ok and len(decoded_info) > 1:
         logger.error(
@@ -94,16 +98,14 @@ def read_qr_code(
         )
         return []
 
-    if decoded_info:
-        logger.debug("Decoded QR code data: %s", decoded_info)
-        if output_path:
-            with open(output_path, "w") as f:
-                json.dump(decoded_info, f)
-            logger.debug("QR code data saved to %s", output_path)
-        else:
-            logger.debug("No output path specified, printing decoded QR code data.")
-            for result in decoded_info:
-                print(result)
+    logger.debug("Decoded QR code data: %s", decoded_info)
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(decoded_info, f)
+        logger.info("QR code data saved to %s", output_path)
+    else:
+        for result in decoded_info:
+            print(result)
 
     return decoded_info
 
@@ -130,7 +132,6 @@ def set_capture_max_resolution(cap: cv2.VideoCapture):
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
-
 def handle_image(
     frame, qcd: cv2.QRCodeDetector | cv2.wechat_qrcode.WeChatQRCode
 ) -> Sequence[str] | None:
@@ -155,7 +156,9 @@ def handle_image(
 
 
 @contextmanager
-def get_image_from_webcam(webcam_path: str, use_wechat: bool = False):
+def get_image_from_webcam(
+    webcam_path: str, skip_frames: int, use_wechat: bool = False, downscale_factor: float = 1.0
+):
     # open webcam using OpenCV
     logger.debug("Opening webcam...")
     frame = None
@@ -170,7 +173,11 @@ def get_image_from_webcam(webcam_path: str, use_wechat: bool = False):
 
         with Live(refresh_per_second=10, screen=True) as live:
             while True:
-                ret, frame = cap.read()
+                # Drain buffered frames to get the latest frame (skip 4 old frames)
+                for _ in range(skip_frames):
+                    cap.grab()
+                # Now read the latest frame
+                ret, frame = cap.retrieve()
                 if not ret:
                     logger.error("Failed to capture image from webcam.")
                     break
@@ -188,12 +195,11 @@ def get_image_from_webcam(webcam_path: str, use_wechat: bool = False):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmpfile:
         if frame is None:
             logger.error("No frame captured from webcam.")
-            yield None
-        else:
-            cv2.imwrite(tmpfile.name, frame)
-            temp_path = Path(tmpfile.name)
+            raise Exception("No frame captured from webcam.")
 
-            yield temp_path
+        cv2.imwrite(tmpfile.name, frame)
+        temp_path = Path(tmpfile.name)
+        yield temp_path
 
 
 def handle_image_path_parse(image_path: str) -> ParseResult | Path:
@@ -219,36 +225,36 @@ def get_webcam_name_from_sysfs(dev_path: str) -> str | None:
 
 
 def get_selected_webcam() -> str:
-    webcams = [str(path) for path in Path("/dev").glob("video*")]
+    webcams = sorted([str(path) for path in Path("/dev").glob("video*")])
     if not webcams:
         logger.error(
             "No webcams found. Please specify an image path or connect a webcam"
         )
-        exit(1)
+        sys.exit(1)
     # prompt user to select webcam if multiple are available
-    selected_webcam = webcams[0]
-    if len(webcams) > 1:
-        logger.info("Multiple webcams found: %s", webcams)
-        webcam_choices = []
-        for i, webcam in enumerate(webcams):
-            webcam_name = get_webcam_name_from_sysfs(webcam)
-            webcam_choices.append(f"{i}: {webcam} ({webcam_name})")
+    if len(webcams) == 1:
+        logger.debug("Single webcam found: %s", webcams[0])
+        return webcams[0]
 
-        selected = None
-        # use questionary to prompt user to select webcam
-        logger.debug("Prompting user to select webcam...")
-        selected = questionary.select(
-            "Multiple webcams detected. Select one:", choices=webcam_choices
-        ).ask()
+    logger.debug("Multiple webcams found: %s", webcams)
+    webcam_choices = []
+    for i, webcam in enumerate(webcams):
+        webcam_name = get_webcam_name_from_sysfs(webcam)
+        webcam_choices.append(
+            questionary.Choice(title=f"{i}: {webcam} ({webcam_name})", value=webcam)
+        )
 
-        if selected is None:
-            logger.error("No webcam selected. Exiting.")
-            exit(1)
+    selected = None
+    # use questionary to prompt user to select webcam
+    selected = questionary.select(
+        "Multiple webcams detected. Select one:", choices=webcam_choices
+    ).ask()
 
-        selected_index = webcam_choices.index(selected)
-        selected_webcam = webcams[selected_index]
+    if selected is None:
+        logger.error("No webcam selected. Exiting.")
+        sys.exit(1)
 
-    return selected_webcam
+    return selected
 
 
 def main():
@@ -264,51 +270,53 @@ def main():
             output_path=args.output,
             use_wechat=args.use_wechat,
         )
-    else:
-        logger.info("No image path provided, using webcam to capture QR code.")
-        if is_snap:
-            # use snapctl to see if camera interface is connected
-            result = subprocess.run(
-                "snapctl is-connected camera",
-                shell=True,
-                check=False,
-                capture_output=True,
-            )
-            if result.returncode != 0:
-                logger.error(
-                    "Camera interface is not connected. Please connect it using 'snap connect <snap>:camera'"
-                )
-                exit(1)
-            logger.debug("Camera interface is connected.")
-        else:
-            logger.debug(
-                "Not running in a snap, assuming camera interface is available."
-            )
+        return
 
-        # open webcam
-        selected_webcam = get_selected_webcam()
-        try:
-            while True:
-                with get_image_from_webcam(
-                    webcam_path=selected_webcam, use_wechat=args.use_wechat
-                ) as webcam_image:
-                    if webcam_image is None:
-                        logger.error("No image captured from webcam.")
-                        exit(1)
-                    image_path = webcam_image
-                    decoded_data = read_qr_code(
-                        image_path=image_path,
-                        many_ok=args.many_ok,
-                        output_path=args.output,
-                        use_wechat=args.use_wechat,
-                    )
-                    if all(not data for data in decoded_data):
-                        logger.error("No QR code data decoded from the image.")
-                        continue
-                    break
-        except KeyboardInterrupt:
-            logger.info("QR code reading interrupted by user.")
-            exit(0)
+    logger.info("No image path provided, using webcam to capture QR code.")
+    if is_snap:
+        # use snapctl to see if camera interface is connected
+        result = subprocess.run(
+            "snapctl is-connected camera",
+            shell=True,
+            check=False,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            logger.error(
+                "Camera interface is not connected. Please connect it using 'snap connect <snap>:camera'"
+            )
+            sys.exit(1)
+        logger.debug("Camera interface is connected.")
+    else:
+        logger.debug("Not running in a snap, assuming camera interface is available.")
+
+    # open webcam
+    selected_webcam = get_selected_webcam()
+    try:
+        while True:
+            with get_image_from_webcam(
+                webcam_path=selected_webcam,
+                skip_frames=args.skip_frames,
+                use_wechat=args.use_wechat,
+                downscale_factor=args.downscale_factor,
+            ) as webcam_image:
+                if webcam_image is None:
+                    logger.error("No image captured from webcam.")
+                    sys.exit(1)
+                image_path = webcam_image
+                decoded_data = read_qr_code(
+                    image_path=image_path,
+                    many_ok=args.many_ok,
+                    output_path=args.output,
+                    use_wechat=args.use_wechat,
+                )
+                if all(not data for data in decoded_data):
+                    logger.error("No QR code data decoded from the image.")
+                    continue
+                break
+    except KeyboardInterrupt:
+        logger.info("QR code reading interrupted by user.\n")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
