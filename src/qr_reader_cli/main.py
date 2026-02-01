@@ -10,7 +10,7 @@ import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Sequence
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import urlparse
 
 import numpy as np
 import questionary
@@ -57,36 +57,23 @@ qcd = cv2.QRCodeDetector()
 wechat_qcd = cv2.wechat_qrcode.WeChatQRCode()
 
 
-def read_image_from_url(url: str) -> np.ndarray | None:
+def read_image_from_url(url: str) -> np.ndarray:
     logger.debug("Reading image from URL: %s", url)
-    try:
-        response = urllib.request.urlopen(url)
-        image_data = np.array(bytearray(response.read()), dtype=np.uint8)
-        img = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
-        return img
-    except Exception as e:
-        logger.exception("Error reading image from URL: %s", e)
+    response = urllib.request.urlopen(url)
+    image_data = np.array(bytearray(response.read()), dtype=np.uint8)
+    img = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(f"Could not decode image from URL: {url}")
+    return img
 
 
 def read_qr_code(
-    image_path: ParseResult | Path | str,
+    img: np.ndarray,
     many_ok: bool,
     output_path: Path,
     use_wechat: bool = False,
 ) -> Sequence[str]:
-    logger.debug("Reading QR code from: %s", image_path)
-    if isinstance(image_path, ParseResult):
-        web_image_path = f"{image_path.scheme}://{image_path.netloc}{image_path.path}"
-        # read image from URL
-        img = read_image_from_url(web_image_path)
-        if img is None:
-            return []
-    else:
-        try:
-            img = cv2.imread(str(image_path))
-        except Exception as e:
-            logger.exception("Error reading image from file: %s", e)
-            return []
+    logger.debug("Reading QR code from image")
 
     decoded_info = handle_image(img, qcd if not use_wechat else wechat_qcd)
     if not decoded_info:
@@ -202,17 +189,21 @@ def get_image_from_webcam(
         yield temp_path
 
 
-def handle_image_path_parse(image_path: str) -> ParseResult | Path:
+def handle_image_path_parse(image_path: str) -> np.ndarray:
+    """Load an image from a file path or URL."""
     parsed_path = urlparse(image_path)
     if parsed_path.scheme in ["http", "https"]:
         logger.debug("URL path provided: %s", parsed_path)
-        return parsed_path
+        return read_image_from_url(image_path)
     else:
         logger.debug("File path provided: %s", image_path)
         if not Path(image_path).exists():
             logger.error("File does not exist: %s", image_path)
             raise FileNotFoundError(f"File does not exist: {image_path}")
-        return Path(image_path)
+        img = cv2.imread(str(image_path))
+        if img is None:
+            raise ValueError(f"Could not read image from file: {image_path}")
+        return img
 
 
 def get_webcam_name_from_sysfs(dev_path: str) -> str | None:
@@ -263,9 +254,8 @@ def main():
         logger.setLevel(logging.DEBUG)
         logger.debug("Arguments: %s", args)
     if args.image_path:
-        image_path = handle_image_path_parse(args.image_path)
         read_qr_code(
-            image_path=image_path,
+            img=handle_image_path_parse(args.image_path),
             many_ok=args.many_ok,
             output_path=args.output,
             use_wechat=args.use_wechat,
@@ -303,9 +293,13 @@ def main():
                 if webcam_image is None:
                     logger.error("No image captured from webcam.")
                     sys.exit(1)
-                image_path = webcam_image
+                # Load the captured image from temp file
+                img = cv2.imread(str(webcam_image))
+                if img is None:
+                    logger.error("Failed to load webcam image.")
+                    continue
                 decoded_data = read_qr_code(
-                    image_path=image_path,
+                    img=img,
                     many_ok=args.many_ok,
                     output_path=args.output,
                     use_wechat=args.use_wechat,
