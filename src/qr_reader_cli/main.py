@@ -16,6 +16,7 @@ import numpy as np
 import questionary
 from PIL import Image
 from rich.live import Live
+from rich.spinner import Spinner
 from rich_pixels import Pixels
 
 # set log level for OpenCV to ERROR before importing cv2
@@ -51,6 +52,7 @@ parser.add_argument(
     "--downscale-factor", type=float, default=1.0, help="Image downscale factor."
 )
 parser.add_argument("--skip-frames", type=int, default=5, help="Number of frames to skip.")
+parser.add_argument("--no-display", action="store_true", help="Do not display webcam feed in console.")
 
 is_snap = os.environ.get("SNAP_NAME", "") != ""
 qcd = cv2.QRCodeDetector()
@@ -144,12 +146,13 @@ def handle_image(
 
 @contextmanager
 def get_image_from_webcam(
-    webcam_path: str, skip_frames: int, use_wechat: bool = False, downscale_factor: float = 1.0
+    webcam_path: str, skip_frames: int, use_wechat: bool = False, downscale_factor: float = 1.0, display: bool = True
 ):
     # open webcam using OpenCV
     logger.debug("Opening webcam...")
     frame = None
     cap = cv2.VideoCapture(webcam_path)
+    frame_count = 0
     set_capture_max_resolution(cap)
 
     try:
@@ -157,8 +160,8 @@ def get_image_from_webcam(
             logger.error("Could not open webcam.")
             return None
         logger.debug("Webcam opened successfully.")
-
-        with Live(refresh_per_second=10, screen=True) as live:
+        
+        with Live(refresh_per_second=10, screen=display) as live:
             while True:
                 # Drain buffered frames to get the latest frame (skip 4 old frames)
                 for _ in range(skip_frames):
@@ -171,10 +174,15 @@ def get_image_from_webcam(
                 decoded_data = handle_image(
                     frame, qcd=wechat_qcd if use_wechat else qcd
                 )
-                display_image_on_console(live=live, image=frame)
+                if display:
+                    display_image_on_console(live=live, image=frame)
+                else:
+                    spinner = Spinner("dots", text=f"[bold green]Processing image from webcam... ({frame_count})[/bold green]")
+                    live.update(spinner)
                 if decoded_data:
                     logger.debug("QR code detected in webcam image.")
                     break
+                frame_count +=1
     finally:
         cap.release()
 
@@ -289,6 +297,7 @@ def main():
                 skip_frames=args.skip_frames,
                 use_wechat=args.use_wechat,
                 downscale_factor=args.downscale_factor,
+                display=not args.no_display,
             ) as webcam_image:
                 if webcam_image is None:
                     logger.error("No image captured from webcam.")
