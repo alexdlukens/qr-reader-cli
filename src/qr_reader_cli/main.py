@@ -251,7 +251,7 @@ def get_selected_webcam() -> str:
     return selected_webcam
 
 
-if __name__ == "__main__":
+def main():
     args = parser.parse_args()
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -309,3 +309,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             logger.info("QR code reading interrupted by user.")
             exit(0)
+
+
+if __name__ == "__main__":
+    main()
