@@ -1,6 +1,7 @@
 name: qr-cli
 base: core24
 version: '0.1'
+title: QR Reader CLI
 summary: A simple QR code reader and generator
 description: |
   A simple QR code reader. Uses OpenCV-Python to load an image file and detect, decode QR codes
@@ -23,7 +24,12 @@ description: |
 license: MIT
 grade: stable
 confinement: strict
-
+source-code: https://github.com/alexdlukens/qr-reader-cli
+issues: https://github.com/alexdlukens/qr-reader-cli/issues
+contact: 
+  - alexdlukens@gmail.com
+website: 
+  - https://alukens.com
 lint:
   ignore:
     - library
