@@ -20,8 +20,8 @@ dependencies = [
 qr-cli = "qr_reader_cli.main:main"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [dependency-groups]
-dev = ["pytest>=8.3.5,<9.0.0", "ruff>=0.11.11,<1.0.0"]
+dev = ["pytest>=8.3.5,<9.0.0", "ruff>=0.11.11,<1.0.0", "requirements-parser (>=0.13.0,<0.14.0)", "poetry-plugin-export (>=1.10.0,<2.0.0)"]
