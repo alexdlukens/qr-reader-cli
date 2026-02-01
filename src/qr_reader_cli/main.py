@@ -153,6 +153,7 @@ def get_image_from_webcam(
     frame = None
     cap = cv2.VideoCapture(webcam_path)
     frame_count = 0
+    spinner = Spinner("dots", text=f"[bold green]Processing image from webcam... ({frame_count})[/bold green]")
     set_capture_max_resolution(cap)
 
     try:
@@ -177,7 +178,7 @@ def get_image_from_webcam(
                 if display:
                     display_image_on_console(live=live, image=frame)
                 else:
-                    spinner = Spinner("dots", text=f"[bold green]Processing image from webcam... ({frame_count})[/bold green]")
+                    spinner.update(text=f"[bold green]Processing image from webcam... ({frame_count})[/bold green]")
                     live.update(spinner)
                 if decoded_data:
                     logger.debug("QR code detected in webcam image.")
