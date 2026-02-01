@@ -29,7 +29,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-parser = argparse.ArgumentParser(description="Read QR codes from an image file.")
+parser = argparse.ArgumentParser(description="Read QR codes from a webcam or image file.")
 parser.add_argument(
     "-i",
     "--image-path",
@@ -51,7 +51,7 @@ parser.add_argument(
 parser.add_argument(
     "--downscale-factor", type=float, default=1.0, help="Image downscale factor."
 )
-parser.add_argument("--skip-frames", type=int, default=5, help="Number of frames to skip.")
+parser.add_argument("--skip-frames", type=int, default=5, help="Number of frames to skip between processing on webcam.")
 parser.add_argument("--no-display", action="store_true", help="Do not display webcam feed in console.")
 
 is_snap = os.environ.get("SNAP_NAME", "") != ""
