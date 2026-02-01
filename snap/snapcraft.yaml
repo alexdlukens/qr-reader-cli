@@ -22,24 +22,18 @@ lint:
   ignore:
     - library
 parts:
-  qr-cli:
-    # See 'snapcraft plugins'
-    plugin: python
-    source: .
+  poetry-deps:
+    plugin: nil
     override-build: |
       craftctl default
-      # copy main.py to bin/qr-cli
-      mkdir -p $CRAFT_PART_INSTALL/bin
-      cp $CRAFT_PART_SRC/src/qr_reader_cli/main.py $CRAFT_PART_INSTALL/bin/qr-cli
-      # make it executable
-      chmod +x $CRAFT_PART_INSTALL/bin/qr-cli
-
-    build-packages:
-      - build-essential
+      curl -sSL https://install.python-poetry.org | python3 -
+      pip install "poetry-plugin-export>=1.8" --break-system-packages
+  qr-cli:
+    plugin: poetry
+    after: [poetry-deps]
+    source: .
     stage-packages:
       - libgl1
-    python-packages:
-      - opencv-python-headless
 
 
 
