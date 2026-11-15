@@ -9,19 +9,22 @@ readme = "README.md"
 requires-python = ">=3.12,<4.0"
 
 dependencies = [
-    "opencv-python-headless>=4.11.0.86,<5.0.0.0",
-    "rich>=14.0.0,<15.0.0",
-    "rich-pixels>=3.0.1,<4.0.0",
-    "questionary>=2.1.0,<3.0.0",
-    "opencv-contrib-python-headless>=4.11.0.86,<5.0.0.0",
+    "opencv-python-headless",
+    "rich",
+    "rich-pixels",
+    "questionary",
+    "opencv-contrib-python-headless",
 ]
 
 [project.scripts]
 qr-cli = "qr_reader_cli.main:main"
 
 [build-system]
-requires = ["poetry-core>=2.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest>=8.3.5,<9.0.0", "ruff>=0.11.11,<1.0.0", "requirements-parser (>=0.13.0,<0.14.0)", "poetry-plugin-export (>=1.10.0,<2.0.0)"]
+dev = ["pytest>=8.3.5,<9.0.0", "ruff>=0.11.11,<1.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

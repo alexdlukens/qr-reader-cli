@@ -1,6 +1,6 @@
 name: qr-cli
 base: core24
-version: '0.1'
+adopt-info: qr-cli  # snap version is read from pyproject.toml, see override-pull below
 title: QR Reader CLI
 summary: A simple QR code reader and generator
 description: |
@@ -34,20 +34,16 @@ lint:
   ignore:
     - library
 parts:
-  poetry-deps:
-    plugin: nil
-    override-build: |
-      craftctl default
-      curl -sSL https://install.python-poetry.org | python3 -
-      pip install "poetry-plugin-export>=1.8" --break-system-packages
   qr-cli:
-    plugin: poetry
-    after: [poetry-deps]
+    plugin: uv
     source: .
+    build-snaps:
+      - astral-uv
     stage-packages:
       - libgl1
-
-
+    override-pull: |
+      craftctl default
+      craftctl set version="$(uv version --short)"
 
 apps:
   qr-cli:

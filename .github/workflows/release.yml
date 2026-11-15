@@ -1,9 +1,9 @@
 name: Release
 
 # Manual: Actions -> Release -> Run workflow, enter the version (no leading "v").
-# Bumps the version in pyproject.toml and snap/snapcraft.yaml, commits to the
-# default branch, tags that commit, publishes the GitHub release, then calls
-# snap.yml to attach an amd64 snap to that release.
+# Bumps the version in pyproject.toml (the snap adopts it) plus uv.lock, commits
+# to the default branch, tags that commit, publishes the GitHub release, then
+# calls snap.yml to attach an amd64 snap to that release.
 #
 # The snap build is called as a reusable workflow rather than triggered by
 # `on: release` because events created with GITHUB_TOKEN (this push, this
@@ -56,29 +56,15 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - uses: astral-sh/setup-uv@v6
+
       - name: Bump version
         env:
           VERSION: ${{ steps.check.outputs.version }}
         run: |
           set -euo pipefail
-          python3 - "$VERSION" <<'PY'
-          import pathlib
-          import re
-          import sys
-
-          version = sys.argv[1]
-          targets = (
-              ("pyproject.toml", r'^version = "[^"]*"', f'version = "{version}"'),
-              ("snap/snapcraft.yaml", r"^version: '[^']*'", f"version: '{version}'"),
-          )
-          for path, pattern, replacement in targets:
-              p = pathlib.Path(path)
-              text = p.read_text()
-              new, count = re.subn(pattern, replacement, text, count=1, flags=re.M)
-              if count != 1:
-                  sys.exit(f"{path}: expected exactly one version line, matched {count}")
-              p.write_text(new)
-          PY
+          uv version --no-sync "$VERSION"
+          uv lock
 
       - name: Commit version bump
         env:
@@ -88,7 +74,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml snap/snapcraft.yaml
+          git add pyproject.toml uv.lock
           git commit -m "release v$VERSION"
           git push origin "HEAD:$BRANCH"
 
