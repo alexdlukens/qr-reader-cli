@@ -14,3 +14,8 @@ uv run pytest    # tests
 ```
 
 Releases are cut from Actions -> Release -> Run workflow with the new version number.
+Each release gets an amd64 snap and a `py3-none-any` wheel attached.
+
+```sh
+uv build --wheel   # local wheel, dist/
+```

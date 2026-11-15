@@ -3,7 +3,7 @@ name: Release
 # Manual: Actions -> Release -> Run workflow, enter the version (no leading "v").
 # Bumps the version in pyproject.toml (the snap adopts it) plus uv.lock, commits
 # to the default branch, tags that commit, publishes the GitHub release, then
-# calls snap.yml to attach an amd64 snap to that release.
+# builds the wheel and calls snap.yml to attach both to that release.
 #
 # The snap build is called as a reusable workflow rather than triggered by
 # `on: release` because events created with GITHUB_TOKEN (this push, this
@@ -87,6 +87,39 @@ jobs:
           git tag -a "v$VERSION" -m "v$VERSION"
           git push origin "v$VERSION"
           gh release create "v$VERSION" --title "v$VERSION" --generate-notes --verify-tag
+
+  wheel:
+    needs: release
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+
+      - name: Verify wheel version
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected="qr_reader_cli-${VERSION}-py3-none-any.whl"
+          wheels=(dist/*.whl)
+          if [[ ${#wheels[@]} -ne 1 || "$(basename "${wheels[0]}")" != "$expected" ]]; then
+            echo "::error::built ${wheels[*]}, expected dist/$expected"
+            exit 1
+          fi
+
+      - name: Attach wheel to release
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v$VERSION" dist/*.whl --clobber
 
   snap:
     needs: release
