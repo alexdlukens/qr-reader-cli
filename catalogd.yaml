@@ -1,0 +1,89 @@
+schema_version: 1
+
+project:
+  slug: qr-reader-cli
+  name: QR Code Reader CLI
+  summary: Decode QR codes from an image file, a URL, or a live webcam feed, printing the result to the terminal or saving it as JSON.
+  description: |
+    A command-line QR code reader built on OpenCV. Point it at an image — on
+    disk or behind a URL — or let it watch your webcam until a code appears, and
+    it prints the decoded contents to the console. Output can be written to a
+    JSON file instead, which makes it easy to pipe or redirect QR codes that
+    carry file data.
+
+    ## Features
+
+    - Read a QR code from a local image file or an `http`/`https` URL
+    - Read interactively from a webcam, with the live camera feed rendered in
+      the terminal as pixels
+    - Run the webcam mode headless with `--no-display`, showing a progress
+      spinner instead of the preview
+    - Handle images containing several QR codes with `--many-ok`
+    - Switch to OpenCV's WeChat QR code detector with `--use-wechat`
+    - Tune webcam processing with `--skip-frames` (frames dropped between
+      detections, keeping the preview close to real time) and
+      `--downscale-factor`
+    - Write results to a file with `-o` / `--output` as a JSON list
+    - Enable verbose logging with `-v` / `--verbose`
+    - Choose between multiple webcams through an interactive prompt, showing
+      each device's name from sysfs
+
+    ## Usage
+
+    ```bash
+    # Read a QR code interactively from a webcam
+    qr-cli
+
+    # Webcam without the live console preview
+    qr-cli --no-display
+
+    # Image with a single QR code
+    qr-cli -i ./path/to/file.jpg
+
+    # Image with multiple QR codes
+    qr-cli -i ./path/to/file.jpg --many-ok
+
+    # Save the decoded result as JSON
+    qr-cli -i ./path/to/file.jpg -o result.json
+    ```
+
+    ## Requirements
+
+    - Linux with a camera device under `/dev/video*` for webcam mode
+    - Python 3.12 or newer
+    - A working OpenCV install (the project depends on
+      `opencv-python-headless` and `opencv-contrib-python-headless`)
+
+    Install from a source checkout with pip, which provides the `qr-cli`
+    entry point:
+
+    ```bash
+    git clone https://github.com/alexdlukens/qr-reader-cli
+    cd qr-reader-cli
+    pip install .
+    qr-cli --help
+    ```
+
+    The repository also ships packaging for a strictly confined snap
+    (`qr-cli`, with `home` and `camera` plugs) and a Flatpak manifest.
+
+    ## License
+
+    MIT
+  author: Alexander Lukens
+  homepage: https://github.com/alexdlukens/qr-reader-cli
+  repository: https://github.com/alexdlukens/qr-reader-cli
+  keywords:
+    - qr
+    - qr-code
+    - decoder
+    - webcam
+    - opencv
+    - cli
+  categories:
+    - utilities
+  links:
+    docs: https://github.com/alexdlukens/qr-reader-cli#readme
+    issues: https://github.com/alexdlukens/qr-reader-cli/issues
+
+visibility: public
