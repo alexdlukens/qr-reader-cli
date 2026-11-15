@@ -1,9 +1,9 @@
 name: Release
 
 # Manual: Actions -> Release -> Run workflow, enter the version (no leading "v").
-# Bumps the version in pyproject.toml and snap/snapcraft.yaml, commits to main,
-# tags the commit, publishes the GitHub release, then calls snap.yml to attach an
-# amd64 snap to that release.
+# Bumps the version in pyproject.toml and snap/snapcraft.yaml, commits to the
+# default branch, tags that commit, publishes the GitHub release, then calls
+# snap.yml to attach an amd64 snap to that release.
 #
 # The snap build is called as a reusable workflow rather than triggered by
 # `on: release` because events created with GITHUB_TOKEN (this push, this
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
       - name: Validate version
@@ -80,16 +80,17 @@ jobs:
               p.write_text(new)
           PY
 
-      - name: Commit version bump to main
+      - name: Commit version bump
         env:
           VERSION: ${{ steps.check.outputs.version }}
+          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml snap/snapcraft.yaml
           git commit -m "release v$VERSION"
-          git push origin HEAD:main
+          git push origin "HEAD:$BRANCH"
 
       - name: Tag and publish release
         env:
