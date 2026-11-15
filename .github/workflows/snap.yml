@@ -1,0 +1,54 @@
+name: Snap (amd64)
+
+# Called by release.yml once the release is published; also runnable by hand to
+# rebuild the snap for an existing tag: Actions -> Snap (amd64) -> Run workflow.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Existing release version, no leading v"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing release version, no leading v"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+          fetch-depth: 0
+
+      - name: Build snap
+        id: build
+        uses: snapcore/action-build@v1
+
+      - name: Verify snap version
+        env:
+          VERSION: ${{ inputs.version }}
+          SNAP: ${{ steps.build.outputs.snap }}
+        run: |
+          set -euo pipefail
+          expected="qr-cli_${VERSION}_amd64.snap"
+          actual=$(basename "$SNAP")
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::built $actual, expected $expected (snapcraft.yaml version out of sync)"
+            exit 1
+          fi
+
+      - name: Attach snap to release
+        env:
+          VERSION: ${{ inputs.version }}
+          SNAP: ${{ steps.build.outputs.snap }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v$VERSION" "$SNAP" --clobber

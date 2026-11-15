@@ -1,0 +1,110 @@
+name: Release
+
+# Manual: Actions -> Release -> Run workflow, enter the version (no leading "v").
+# Bumps the version in pyproject.toml and snap/snapcraft.yaml, commits to main,
+# tags the commit, publishes the GitHub release, then calls snap.yml to attach an
+# amd64 snap to that release.
+#
+# The snap build is called as a reusable workflow rather than triggered by
+# `on: release` because events created with GITHUB_TOKEN (this push, this
+# release) never start new workflow runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, MAJOR.MINOR.PATCH, no leading v"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate version
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+          current=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+          if [[ "$current" == "$VERSION" ]]; then
+            echo "::error::pyproject.toml is already at $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - "$VERSION" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version = sys.argv[1]
+          targets = (
+              ("pyproject.toml", r'^version = "[^"]*"', f'version = "{version}"'),
+              ("snap/snapcraft.yaml", r"^version: '[^']*'", f"version: '{version}'"),
+          )
+          for path, pattern, replacement in targets:
+              p = pathlib.Path(path)
+              text = p.read_text()
+              new, count = re.subn(pattern, replacement, text, count=1, flags=re.M)
+              if count != 1:
+                  sys.exit(f"{path}: expected exactly one version line, matched {count}")
+              p.write_text(new)
+          PY
+
+      - name: Commit version bump to main
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml snap/snapcraft.yaml
+          git commit -m "release v$VERSION"
+          git push origin HEAD:main
+
+      - name: Tag and publish release
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes --verify-tag
+
+  snap:
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/snap.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
