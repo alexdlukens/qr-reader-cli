@@ -71,6 +71,8 @@ project:
 
     MIT
   author: Alexander Lukens
+  type: cli-application
+  language: Python
   homepage: https://github.com/alexdlukens/qr-reader-cli
   repository: https://github.com/alexdlukens/qr-reader-cli
   keywords:
