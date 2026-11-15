@@ -285,7 +285,7 @@ wheels = [
 
 [[package]]
 name = "qr-reader-cli"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "opencv-contrib-python-headless" },
