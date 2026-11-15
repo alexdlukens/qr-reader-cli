@@ -2,7 +2,7 @@
 [project]
 
 name = "qr-reader-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "A QR Code reader on the command line."
 authors = [{ name = "Alex Lukens", email = "alexdlukens@gmail.com" }]
 readme = "README.md"
