@@ -16,7 +16,7 @@ modules:
         dest: vendor
       - type: git
         url: https://github.com/alexdlukens/qr-reader-cli.git
-        commit: 6e3f35a3ed62495e12e040cb82950be2ad3a10a5
+        commit: 7bd3edd04409d77a60554ab1e1e98fdfffecc298
 finish-args:
   - --filesystem=home:ro
   - --device=all
