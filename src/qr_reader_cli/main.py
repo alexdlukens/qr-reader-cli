@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import numpy as np
 import questionary
 from PIL import Image
+from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 from rich_pixels import Pixels
@@ -29,7 +30,14 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-parser = argparse.ArgumentParser(description="Read QR codes from a webcam or image file.")
+parser = argparse.ArgumentParser(description="Read QR codes from a webcam or image file, or generate new QR codes.")
+parser.add_argument(
+    "--generate",
+    type=str,
+    default=None,
+    metavar="TEXT",
+    help="Generate a QR code for TEXT and show it in the terminal or save it to --output.",
+)
 parser.add_argument(
     "-i",
     "--image-path",
@@ -40,7 +48,10 @@ parser.add_argument(
     "-v", "--verbose", action="store_true", help="Enable verbose output."
 )
 parser.add_argument(
-    "-o", "--output", type=Path, help="Path to save the decoded QR code output."
+    "-o",
+    "--output",
+    type=Path,
+    help="Path to save the decoded QR code output, or the generated QR code image.",
 )
 parser.add_argument(
     "--many-ok", action="store_true", help="Allow multiple QR codes in the image."
@@ -56,7 +67,19 @@ parser.add_argument("--no-display", action="store_true", help="Do not display we
 
 is_snap = os.environ.get("SNAP_NAME", "") != ""
 qcd = cv2.QRCodeDetector()
-wechat_qcd = cv2.wechat_qrcode.WeChatQRCode()
+_wechat_cls = getattr(getattr(cv2, "wechat_qrcode", None), "WeChatQRCode", None)
+_wechat_qcd = None
+
+
+def get_wechat_qcd():
+    global _wechat_qcd
+    if _wechat_cls is None:
+        raise RuntimeError(
+            "WeChat QR code detection is not available in this OpenCV build."
+        )
+    if _wechat_qcd is None:
+        _wechat_qcd = _wechat_cls()
+    return _wechat_qcd
 
 
 def read_image_from_url(url: str) -> np.ndarray:
@@ -77,7 +100,7 @@ def read_qr_code(
 ) -> Sequence[str]:
     logger.debug("Reading QR code from image")
 
-    decoded_info = handle_image(img, qcd if not use_wechat else wechat_qcd)
+    decoded_info = handle_image(img, qcd if not use_wechat else get_wechat_qcd())
     if not decoded_info:
         logger.debug("No QR code data decoded.")
         return []
@@ -115,6 +138,56 @@ def display_image_on_console(live: Live, image: np.ndarray):
     live.refresh()
 
 
+def generate_qr_code(text: str) -> np.ndarray:
+    logger.debug("Generating QR code for text.")
+    encoder = cv2.QRCodeEncoder_create()
+    qr = encoder.encode(text)
+    # Upscale so each module is large enough to scan reliably, and add a
+    # quiet zone (white border) around the code.
+    modules = qr.shape[0]
+    scale = max(1, round(512 / modules))
+    if scale > 1:
+        qr = cv2.resize(
+            qr, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST
+        )
+    border = 4 * scale
+    qr = cv2.copyMakeBorder(
+        qr, border, border, border, border, cv2.BORDER_CONSTANT, value=255
+    )
+    return qr
+
+
+def display_qr_on_console(image: np.ndarray):
+    console = Console()
+    # The HalfcellRenderer emits two vertical pixels per terminal row, so
+    # target dimensions are in pixels, not rows.
+    if not console.is_terminal:
+        logger.error(
+            "Standard output is not a terminal; use --output to save the QR code."
+        )
+        sys.exit(1)
+    console_size = console.size
+    shape = image.shape
+    target_w = console_size.width
+    target_h = max(2, round(target_w * shape[0] / shape[1]))
+    target_h += target_h % 2
+    if target_h // 2 > console_size.height:
+        target_h = console_size.height * 2
+        target_w = max(1, round(target_h * shape[1] / shape[0]))
+    pil_image = Image.fromarray(image)
+    console.print(Pixels.from_image(pil_image, resize=(target_w, target_h)))
+
+
+def save_qr_code(image: np.ndarray, output_path: Path):
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise ValueError("Could not encode QR code image.")
+    try:
+        encoded.tofile(str(output_path))
+    except OSError as exc:
+        raise OSError(f"Could not write {output_path}: {exc}") from exc
+
+
 def set_capture_max_resolution(cap: cv2.VideoCapture):
     # set maximum resolution for webcam capture
     # it will automatically adjust to the maximum supported resolution
@@ -122,7 +195,7 @@ def set_capture_max_resolution(cap: cv2.VideoCapture):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
 
 def handle_image(
-    frame, qcd: cv2.QRCodeDetector | cv2.wechat_qrcode.WeChatQRCode
+    frame, qcd
 ) -> Sequence[str] | None:
     logger.debug("Handling image for QR code detection.")
 
@@ -136,7 +209,7 @@ def handle_image(
             logger.debug("No QR code found in the image.")
             return None
 
-    if isinstance(qcd, cv2.wechat_qrcode.WeChatQRCode):
+    if _wechat_cls is not None and isinstance(qcd, _wechat_cls):
         decoded_data, _ = qcd.detectAndDecode(frame, None)
         return process_detection_result(decoded_data)
     else:
@@ -173,7 +246,7 @@ def get_image_from_webcam(
                     logger.error("Failed to capture image from webcam.")
                     break
                 decoded_data = handle_image(
-                    frame, qcd=wechat_qcd if use_wechat else qcd
+                    frame, qcd=get_wechat_qcd() if use_wechat else qcd
                 )
                 if display:
                     display_image_on_console(live=live, image=frame)
@@ -262,6 +335,30 @@ def main():
     if args.verbose:
         logger.setLevel(logging.DEBUG)
         logger.debug("Arguments: %s", args)
+    if args.use_wechat:
+        try:
+            get_wechat_qcd()
+        except RuntimeError as exc:
+            parser.error(str(exc))
+    if args.generate is not None:
+        if args.image_path:
+            parser.error("--generate and --image-path cannot be used together.")
+        if not args.generate.strip():
+            parser.error("--generate text must not be empty.")
+        try:
+            generated = generate_qr_code(args.generate)
+        except cv2.error as exc:
+            parser.error(f"Could not generate QR code: {exc}")
+        if args.output:
+            try:
+                save_qr_code(generated, args.output)
+            except (ValueError, OSError) as exc:
+                parser.error(str(exc))
+            logger.info("QR code saved to %s", args.output)
+        else:
+            display_qr_on_console(generated)
+        return
+
     if args.image_path:
         read_qr_code(
             img=handle_image_path_parse(args.image_path),

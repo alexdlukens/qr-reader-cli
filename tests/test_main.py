@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from qr_reader_cli.main import handle_image_path_parse, read_qr_code
+from qr_reader_cli.main import (
+    generate_qr_code,
+    handle_image,
+    handle_image_path_parse,
+    qcd,
+    read_qr_code,
+    save_qr_code,
+)
 
 TEST_DIR = Path(__file__).parent
 TEST_DATA_DIR = TEST_DIR / "data"
@@ -48,3 +55,36 @@ def test_read_from_file_success():
     # Check the result
     assert len(result) == 1
     assert result[0] == "http://alukens.com"
+
+def test_generate_qr_code_round_trip():
+    text = "https://example.com"
+    img = generate_qr_code(text)
+    assert img.ndim == 2
+    assert img.shape[0] == img.shape[1]
+    result = handle_image(img, qcd)
+    assert list(result) == [text]
+
+def test_generate_qr_code_round_trip_long_text():
+    text = "https://example.com/" + "a" * 200
+    img = generate_qr_code(text)
+    result = handle_image(img, qcd)
+    assert list(result) == [text]
+
+
+def test_save_qr_code_writes_scannable_png(tmp_path):
+    text = "https://example.com"
+    img = generate_qr_code(text)
+    out = tmp_path / "qr.png"
+    save_qr_code(img, out)
+    assert out.exists()
+    import cv2
+
+    saved = cv2.imread(str(out))
+    assert saved is not None
+    assert list(handle_image(saved, qcd)) == [text]
+
+
+def test_save_qr_code_bad_parent_dir_raises(tmp_path):
+    img = generate_qr_code("https://example.com")
+    with pytest.raises(OSError):
+        save_qr_code(img, tmp_path / "missing" / "qr.png")
